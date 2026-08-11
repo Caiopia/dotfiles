@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Android
+.gradle/
+build/
+local.properties
+captures/
+.cxx/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# mise
+mise.local.toml
+
+# Secrets
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.key
+
+# Node
+node_modules/

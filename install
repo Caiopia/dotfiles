@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DO_PACKAGES=true
+DO_DEFAULTS=true
+
+usage() {
+  cat <<'USAGE'
+Usage: ./install [--no-packages] [--no-defaults]
+
+  Symlinks configs, installs the Brewfile, applies macOS defaults.
+  Everything runs by default; the flags opt out. Safe to re-run.
+
+  --no-packages   skip `brew bundle` (also skipped if brew isn't installed)
+  --no-defaults   skip macOS defaults
+USAGE
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-packages) DO_PACKAGES=false ;;
+    --no-defaults) DO_DEFAULTS=false ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $arg" >&2; usage; exit 1 ;;
+  esac
+done
+
+# ---------- Symlinks ----------
+# dotfiles owns every one of these targets, and nothing else owns any of them.
+# Always linked, even when the matching app isn't installed — an orphan config
+# costs nothing and a later install picks it up for free.
+symlinks=(
+  "config/zshrc:${HOME}/.zshrc"
+  "config/starship.toml:${HOME}/.config/starship.toml"
+  "config/ghostty/config:${HOME}/.config/ghostty/config"
+  "config/zellij/config.kdl:${HOME}/.config/zellij/config.kdl"
+  "config/git/config:${HOME}/.gitconfig"
+  "config/git/ignore:${HOME}/.config/git/ignore"
+)
+
+echo "--- Symlinks ---"
+for entry in "${symlinks[@]}"; do
+  src="${DOTFILES_DIR}/${entry%%:*}"
+  target="${entry#*:}"
+  mkdir -p "$(dirname "${target}")"
+
+  if [[ -L "${target}" ]]; then
+    if [[ "$(readlink "${target}")" == "${src}" ]]; then
+      echo "  ok       ${target}"
+      continue
+    fi
+    echo "  relink   ${target}"
+    rm "${target}"
+  elif [[ -e "${target}" ]]; then
+    # Timestamp to the second, plus a counter, so two collisions on the same
+    # file never clobber each other.
+    backup="${target}.backup.$(date +%Y%m%d-%H%M%S)"
+    n=1
+    while [[ -e "${backup}" ]]; do
+      backup="${target}.backup.$(date +%Y%m%d-%H%M%S).${n}"
+      n=$((n + 1))
+    done
+    echo "  backup   ${target} -> ${backup}"
+    mv "${target}" "${backup}"
+  fi
+  ln -s "${src}" "${target}"
+  echo "  linked   ${target}"
+done
+echo ""
+
+# ---------- Packages ----------
+echo "--- Packages ---"
+if [[ "${DO_PACKAGES}" == false ]]; then
+  echo "  Skipped (--no-packages)."
+elif ! command -v brew &>/dev/null; then
+  echo "  Homebrew not installed — skipping. Configs above are still linked."
+  echo "  Install it from https://brew.sh, then re-run ./install."
+else
+  brew bundle install --file="${DOTFILES_DIR}/Brewfile"
+fi
+echo ""
+
+# ---------- macOS defaults ----------
+echo "--- macOS defaults ---"
+if [[ "${DO_DEFAULTS}" == false ]]; then
+  echo "  Skipped (--no-defaults)."
+elif [[ "$(uname)" != "Darwin" ]]; then
+  echo "  Not macOS — skipping."
+else
+  # Warn and continue rather than abort: a managed machine will have some keys
+  # locked by MDM, and the rest should still apply.
+  set_default() {
+    if ! defaults write "$@" 2>/dev/null; then
+      echo "  locked   $1 $2"
+    fi
+  }
+  # shellcheck source=macos.defaults
+  source "${DOTFILES_DIR}/macos.defaults"
+  killall Dock &>/dev/null || true
+  killall Finder &>/dev/null || true
+  echo "  Applied. Some changes need a logout to take effect."
+fi
+echo ""
+
+echo "Done. Restart your shell or: source ~/.zshrc"

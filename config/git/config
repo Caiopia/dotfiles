@@ -1,0 +1,53 @@
+[init]
+    defaultBranch = main
+
+[pull]
+    rebase = true
+
+[push]
+    autoSetupRemote = true
+
+[fetch]
+    prune = true
+
+[rebase]
+    autoStash = true
+
+[merge]
+    conflictStyle = zdiff3
+
+[diff]
+    algorithm = histogram
+    colorMoved = default
+
+[core]
+    pager = delta
+    excludesfile = ~/.config/git/ignore
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    navigate = true
+    dark = true
+    side-by-side = true
+    line-numbers = true
+    syntax-theme = "Catppuccin Mocha"
+    file-style = "bold yellow ul"
+    file-decoration-style = "none"
+    hunk-header-decoration-style = "blue box"
+    hunk-header-style = "file line-number syntax"
+
+# `!gh` rather than an absolute path so this resolves on both arm64
+# (/opt/homebrew) and x86_64 (/usr/local).
+[credential "https://github.com"]
+    helper =
+    helper = !gh auth git-credential
+
+[credential "https://gist.github.com"]
+    helper =
+    helper = !gh auth git-credential
+
+# Name and email live outside version control.
+[include]
+    path = ~/.config/git/identity
