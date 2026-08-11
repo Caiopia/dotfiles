@@ -5,7 +5,7 @@
 # keys on a managed machine don't kill the run.
 #
 # Personal-taste settings (Dock, trackpad) are NOT here — they live in the
-# private setup repo. This file is the subset that's reasonable on any machine.
+# private dx repo. This file is the subset that's reasonable on any machine.
 
 # Finder
 set_default com.apple.finder ShowPathbar -bool true
