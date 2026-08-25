@@ -16,6 +16,16 @@
 [merge]
     conflictStyle = zdiff3
 
+[rerere]
+    enabled = true
+    autoupdate = true
+
+[branch]
+    sort = -committerdate
+
+[column]
+    ui = auto
+
 [diff]
     algorithm = histogram
     colorMoved = default

@@ -1,125 +1,63 @@
 # --- Environment ---
 export DEV_HOME="${DEV_HOME:-$HOME/Developer}"
-export LANG="en_US.UTF-8"
-export LC_ALL="en_US.UTF-8"
+export LANG="en_CA.UTF-8"
 
-# --- Homebrew ---
-if [[ "$(uname -m)" == "arm64" ]]; then
+# --- Homebrew & PATH ---
+if [[ -f "/opt/homebrew/bin/brew" ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 else
   eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-# Deduplicate PATH
 typeset -U path
-path=(
-  $HOME/.local/bin
-  $path
-)
+path=($HOME/.local/bin $path)
 
 # --- History ---
 HISTFILE="${HOME}/.zsh_history"
 HISTSIZE=50000
 SAVEHIST=50000
-setopt SHARE_HISTORY
+setopt INC_APPEND_HISTORY
 setopt HIST_IGNORE_ALL_DUPS
-setopt HIST_SAVE_NO_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_IGNORE_SPACE
 setopt HIST_VERIFY
 
-# --- Shell options ---
+# --- Shell Options ---
 setopt AUTO_CD
 setopt AUTO_PUSHD
 setopt PUSHD_IGNORE_DUPS
 setopt PUSHD_SILENT
-setopt CORRECT
 setopt INTERACTIVE_COMMENTS
 setopt NO_BEEP
 
 # --- Completions ---
-autoload -Uz compinit && compinit -i
+# The dump must be unquoted: (#q...) glob qualifiers don't evaluate inside
+# quotes, and the check would otherwise always take the slow branch.
+autoload -Uz compinit
+if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+  compinit -d "${ZDOTDIR:-$HOME}/.zcompdump"
+else
+  compinit -C -d "${ZDOTDIR:-$HOME}/.zcompdump"
+fi
+
 zstyle ':completion:*' menu select
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 zstyle ':completion:*' special-dirs true
 zstyle ':completion:*' squeeze-slashes true
 
-# --- Key bindings ---
+# --- Key Bindings ---
 bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 bindkey '^[[3~' delete-char
 
-# --- Starship prompt ---
-eval "$(starship init zsh)"
-
-# --- Aliases ---
-alias ls="eza --group-directories-first"
-alias ll="eza -la --group-directories-first --git"
-alias lt="eza --tree --level=2"
-alias cat="bat --paging=never --style=plain"
-alias catp="bat"
-alias diff="delta"
-alias f="fd"
-alias s="rg"
-
-alias ..="cd .."
-alias ...="cd ../.."
-alias ....="cd ../../.."
-
-alias gs="git status -sb"
-alias gd="git diff"
-alias gl="git log --oneline --graph -20"
-
-alias reload="exec zsh"
-alias path='echo -e ${PATH//:/\\n}'
-
-# --- dots ---
-# Locate the repo from the ~/.zshrc symlink rather than a hardcoded path, so
-# this works wherever the repo was cloned.
-dots() {
-  local link repo
-  link="$(readlink "${HOME}/.zshrc" 2>/dev/null)"
-  if [[ -z "${link}" ]]; then
-    echo "dots: ~/.zshrc is not a symlink — can't locate the dotfiles repo." >&2
-    return 1
-  fi
-  repo="$(cd "$(dirname "${link}")/.." && pwd)"
-
-  case "${1:-}" in
-    apply) shift; "${repo}/install" "$@" ;;
-    push)
-      shift
-      git -C "${repo}" add -A
-      if git -C "${repo}" diff --cached --quiet; then
-        echo "dots: nothing to commit."
-        return 0
-      fi
-      git -C "${repo}" commit -m "${1:-Update dotfiles}"
-      git -C "${repo}" push
-      ;;
-    edit) "${EDITOR:-vi}" "${repo}" ;;
-    help|-h|--help)
-      cat <<'HELP'
-dots apply [flags]   re-run ./install (--no-packages, --no-defaults)
-dots push [msg]      commit + push changes
-dots edit            open the dotfiles repo in $EDITOR
-HELP
-      ;;
-    "") echo "dots: apply | push | edit    (see 'dots help')" ;;
-    *)
-      echo "dots: unknown subcommand '$1'. Try 'dots help'." >&2
-      return 1 ;;
-  esac
-}
-
-# --- bat ---
+# --- Theming & Tool Config ---
 export BAT_THEME="Catppuccin Mocha"
 export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 
-# --- fzf ---
-source <(fzf --zsh)
-
+export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow --exclude .git"
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
 export FZF_DEFAULT_OPTS=" \
   --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
   --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
@@ -127,26 +65,24 @@ export FZF_DEFAULT_OPTS=" \
   --color=selected-bg:#45475a \
   --border rounded --margin=1 --padding=1"
 
-if command -v fd &>/dev/null; then
-  export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow --exclude .git"
-  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-  export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
-fi
+# --- Integrations ---
+eval "$(starship init zsh)"
+eval "$(zoxide init --cmd cd zsh)"
+eval "$(fzf --zsh)"
 
 # --- Plugins ---
-if [[ -f "${HOMEBREW_PREFIX}/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
-  source "${HOMEBREW_PREFIX}/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
-  ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-  ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
-fi
+source "${HOMEBREW_PREFIX}/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+source "${HOMEBREW_PREFIX}/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
 
-# Syntax highlighting must be sourced last
-[[ -f "${HOMEBREW_PREFIX}/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh" ]] && \
-  source "${HOMEBREW_PREFIX}/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
+# --- Aliases ---
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias gs="git status -sb"
+alias gd="git diff"
+alias gl="git log --oneline --graph -20"
+alias reload="exec zsh"
+alias path='print -l $path'
 
-# --- mise (personal machines only; absent here is fine) ---
-command -v mise &>/dev/null && eval "$(mise activate zsh)"
-
-# --- dx (personal machines only) ---
-# dx owns this file and symlinks it here; dotfiles only offers the hook.
+# --- Machine Local Overrides ---
 [[ -f "${HOME}/.config/dx/shell.zsh" ]] && source "${HOME}/.config/dx/shell.zsh"
+[[ -f "${HOME}/.zshrc.local" ]] && source "${HOME}/.zshrc.local"

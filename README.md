@@ -1,70 +1,57 @@
 # dotfiles
 
-Terminal and shell configuration for macOS — zsh, starship, git, and a small set
-of CLI tools. No casks, no language runtimes, no machine-specific assumptions, so
-it installs cleanly on a managed or restricted machine.
+A small macOS setup repo for shell config, Git, terminal preferences, and the
+base packages I want on a clean machine.
+
+## What this repo does
+
+- Installs Homebrew and the CLI tools declared in [Brewfile](Brewfile)
+- Links repo-managed config into the home directory
+- Sets up zsh + Starship for the terminal experience plus a few modern tools.
+- Configures git identity using `gh` and ignore rules
+- Applies some macOS defaults I prefer on install
+- Re-runs cleanly and safely on top of an existing machine
 
 ## Install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Caiopia/dotfiles/main/bootstrap | bash
-```
-
-That clones the repo to `~/Developer/dotfiles`, installs Homebrew if missing, and
-runs `./install`. To re-run later, from the repo:
+Obviously you can just clone this, but for a cheeky one liner:
 
 ```bash
-./install                  # symlinks + brew bundle + macOS defaults
-./install --no-packages    # skip brew (also skipped automatically if brew is absent)
-./install --no-defaults    # skip macOS defaults
+curl -fsSL https://raw.githubusercontent.com/Caiopia/dotfiles/main/install | bash
 ```
 
-Everything happens by default and every step is idempotent — re-running is how
-you check the machine is in the right state.
+Then, from the repo later if making changes:
 
-## What gets linked
-
-| Repo file | Target |
-|---|---|
-| `config/zshrc` | `~/.zshrc` |
-| `config/starship.toml` | `~/.config/starship.toml` |
-| `config/ghostty/config` | `~/.config/ghostty/config` |
-| `config/zellij/config.kdl` | `~/.config/zellij/config.kdl` |
-| `config/git/config` | `~/.gitconfig` |
-| `config/git/ignore` | `~/.config/git/ignore` |
-
-Symlinks, not copies — edits in `config/` take effect immediately. An existing
-file at a target is backed up to `<target>.backup.<timestamp>` rather than
-overwritten.
-
-Configs are linked even when the corresponding app isn't installed; the orphan
-costs nothing and a later install picks it up.
-
-`~/.gitconfig` rather than `~/.config/git/config`, because git ignores the XDG
-path when `~/.gitconfig` exists. Your name and email are *not* in this repo —
-they're read from `~/.config/git/identity`, which is untracked:
-
-```ini
-[user]
-    name = Your Name
-    email = you@example.com
+```bash
+./install
 ```
 
-## Commands
+The one liner installs the repo under `~/Developer` by default; you get a nice macOS hammer icon by default in Finder. Set `DEV_HOME` first if you want it elsewhere.
 
-```
-dots apply [flags]   re-run ./install
-dots push [msg]      commit + push changes
-dots edit            open the repo in $EDITOR
-```
+## What gets set up
 
-## Packages
+| Area | Repo file | Installed location | Purpose |
+| --- | --- | --- | --- |
+| Shell config | [config/zshrc](config/zshrc) | `~/.zshrc` | Main zsh setup |
+| Prompt | [config/starship.toml](config/starship.toml) | `~/.config/starship.toml` | Terminal prompt styling |
+| Terminal app | [config/ghostty/config](config/ghostty/config) | `~/.config/ghostty/config` | Ghostty settings |
+| Git config | [config/git/config](config/git/config) | `~/.gitconfig` | Git defaults |
+| Git ignores | [config/git/ignore](config/git/ignore) | `~/.config/git/ignore` | Shared ignore rules |
+| Packages | [Brewfile](Brewfile) | system package manager | CLI tools and packages |
+| macOS defaults | [macos.defaults](macos.defaults) | system settings | Standard defaults |
 
-See [`Brewfile`](Brewfile). Both `zellij` and `herdr` are installed for now —
-they're competing multiplexers and one will eventually be dropped.
+## Where to find things
 
-## macOS defaults
+- Repo root: [dotfiles](.)
+- Shell config: [config](config)
+- Git config: [config/git](config/git)
+- Install script: [install](install)
+- Package list: [Brewfile](Brewfile)
+- macOS defaults: [macos.defaults](macos.defaults)
 
-[`macos.defaults`](macos.defaults) is applied on every install. Keys locked by
-MDM are reported and skipped; the rest still apply. Personal-taste settings
-(Dock, trackpad) deliberately aren't here.
+## Notes
+
+- These are symlinks, not copies, so changes in the repo take effect immediately.
+- Existing target files are backed up instead of overwritten.
+- Machine-local shell tweaks can go in `~/.zshrc.local` and are sourced automatically.
+- Git identity is not stored in the repo; it lives in `~/.config/git/identity` and is created from `GIT_NAME` / `GIT_EMAIL` or from the signed-in GitHub account when available.

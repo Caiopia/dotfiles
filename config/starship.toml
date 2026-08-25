@@ -19,7 +19,6 @@ palette = "catppuccin_mocha"
 [character]
 success_symbol = "[❯](mauve)"
 error_symbol = "[❯](red)"
-vimcmd_symbol = "[❮](green)"
 
 [directory]
 truncation_length = 4
@@ -63,33 +62,6 @@ disabled = false
 format = "[$time]($style)"
 style = "dimmed subtext0"
 time_format = "%H:%M"
-
-[python]
-disabled = true
-
-[nodejs]
-disabled = true
-
-[rust]
-disabled = true
-
-[golang]
-disabled = true
-
-[ruby]
-disabled = true
-
-[swift]
-disabled = true
-
-[docker_context]
-disabled = true
-
-[package]
-disabled = true
-
-[gcloud]
-disabled = true
 
 [palettes.catppuccin_mocha]
 rosewater = "#f5e0dc"

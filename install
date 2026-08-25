@@ -1,40 +1,63 @@
 #!/usr/bin/env bash
+# The one entry point — curl-able and locally runnable:
+#   curl -fsSL https://raw.githubusercontent.com/Caiopia/dotfiles/main/install | bash
+#   curl -fsSL https://raw.githubusercontent.com/Caiopia/dotfiles/main/install | bash -s -- --dx
+#   ./install [--dx]
 set -euo pipefail
 
-DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DO_PACKAGES=true
-DO_DEFAULTS=true
+DEV_HOME="${DEV_HOME:-$HOME/Developer}"
+DOTFILES_DIR="${DOTFILES_DIR:-${DEV_HOME}/dotfiles}"
+DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/Caiopia/dotfiles.git}"
 
-usage() {
-  cat <<'USAGE'
-Usage: ./install [--no-packages] [--no-defaults]
-
-  Symlinks configs, installs the Brewfile, applies macOS defaults.
-  Everything runs by default; the flags opt out. Safe to re-run.
-
-  --no-packages   skip `brew bundle` (also skipped if brew isn't installed)
-  --no-defaults   skip macOS defaults
-USAGE
-}
-
+DO_DX=false
 for arg in "$@"; do
   case "$arg" in
-    --no-packages) DO_PACKAGES=false ;;
-    --no-defaults) DO_DEFAULTS=false ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "Unknown argument: $arg" >&2; usage; exit 1 ;;
+    --dx) DO_DX=true ;;
+    *) echo "Unknown argument: $arg (only --dx is supported)" >&2; exit 1 ;;
   esac
 done
 
+# ---------- Homebrew ----------
+# First because its installer also takes care of the Xcode Command Line Tools,
+# so git is guaranteed by the time the repo is cloned.
+if ! command -v brew &>/dev/null; then
+  echo "--- Installing Homebrew ---"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+fi
+if [[ "$(uname -m)" == "arm64" ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+else
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# ---------- Repo ----------
+# Piped from curl there is no local file: fetch the repo, then re-run from it.
+if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+  DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  if [[ -e "${DOTFILES_DIR}/.git" ]]; then
+    echo "--- Updating ${DOTFILES_DIR} ---"
+    # Fail loudly on a dirty tree rather than stashing behind your back: this
+    # is a live edit surface, not just a deploy target.
+    if ! git -C "${DOTFILES_DIR}" diff --quiet || ! git -C "${DOTFILES_DIR}" diff --cached --quiet; then
+      echo "ERROR: ${DOTFILES_DIR} has uncommitted changes." >&2
+      echo "Commit or stash them, then re-run." >&2
+      exit 1
+    fi
+    git -C "${DOTFILES_DIR}" pull --ff-only
+  else
+    echo "--- Cloning into ${DOTFILES_DIR} ---"
+    mkdir -p "$(dirname "${DOTFILES_DIR}")"
+    git clone "${DOTFILES_REPO}" "${DOTFILES_DIR}"
+  fi
+  exec "${DOTFILES_DIR}/install" "$@"
+fi
+
 # ---------- Symlinks ----------
-# dotfiles owns every one of these targets, and nothing else owns any of them.
-# Always linked, even when the matching app isn't installed — an orphan config
-# costs nothing and a later install picks it up for free.
 symlinks=(
   "config/zshrc:${HOME}/.zshrc"
   "config/starship.toml:${HOME}/.config/starship.toml"
   "config/ghostty/config:${HOME}/.config/ghostty/config"
-  "config/zellij/config.kdl:${HOME}/.config/zellij/config.kdl"
   "config/git/config:${HOME}/.gitconfig"
   "config/git/ignore:${HOME}/.config/git/ignore"
 )
@@ -53,14 +76,7 @@ for entry in "${symlinks[@]}"; do
     echo "  relink   ${target}"
     rm "${target}"
   elif [[ -e "${target}" ]]; then
-    # Timestamp to the second, plus a counter, so two collisions on the same
-    # file never clobber each other.
     backup="${target}.backup.$(date +%Y%m%d-%H%M%S)"
-    n=1
-    while [[ -e "${backup}" ]]; do
-      backup="${target}.backup.$(date +%Y%m%d-%H%M%S).${n}"
-      n=$((n + 1))
-    done
     echo "  backup   ${target} -> ${backup}"
     mv "${target}" "${backup}"
   fi
@@ -71,36 +87,77 @@ echo ""
 
 # ---------- Packages ----------
 echo "--- Packages ---"
-if [[ "${DO_PACKAGES}" == false ]]; then
-  echo "  Skipped (--no-packages)."
-elif ! command -v brew &>/dev/null; then
-  echo "  Homebrew not installed — skipping. Configs above are still linked."
-  echo "  Install it from https://brew.sh, then re-run ./install."
+brew bundle install --file="${DOTFILES_DIR}/Brewfile"
+echo ""
+
+# ---------- Git identity ----------
+# Uses HTTPS login through gh to set up git identity, so no SSH keys are needed. Might look into SSH keys later, but this is simpler now.
+identity="${HOME}/.config/git/identity"
+if [[ ! -f "${identity}" ]] && ! gh auth status &>/dev/null && [[ -r /dev/tty ]]; then
+  echo "--- GitHub auth ---"
+  gh auth login --scopes user:email < /dev/tty
+fi
+
+# config/git/config includes this file; it stays untracked. Derived from the
+# gh login when possible; GIT_NAME/GIT_EMAIL override; can always edit the file since file existence skips all of this.
+echo "--- Git identity ---"
+if [[ -f "${identity}" ]]; then
+  echo "  ok       ${identity}"
+  echo "           $(git config -f "${identity}" --get user.name 2>/dev/null || true) <$(git config -f "${identity}" --get user.email 2>/dev/null || true)>"
 else
-  brew bundle install --file="${DOTFILES_DIR}/Brewfile"
+  id_name="${GIT_NAME:-}"
+  id_email="${GIT_EMAIL:-}"
+  if [[ -z "${id_name}" || -z "${id_email}" ]] && gh auth status &>/dev/null; then
+    [[ -z "${id_name}" ]] && id_name="$(gh api user --jq '.name // .login' 2>/dev/null || true)"
+    if [[ -z "${id_email}" ]]; then
+      emails=()
+      while IFS= read -r e; do [[ -n "${e}" ]] && emails+=("${e}"); done \
+        < <(gh api user/emails --jq '.[] | select(.verified) | .email' 2>/dev/null || true)
+      if [[ "${#emails[@]}" -eq 1 ]]; then
+        id_email="${emails[0]}"
+      elif [[ "${#emails[@]}" -gt 1 && -r /dev/tty ]]; then
+        echo "  multiple emails on the gh account:"
+        PS3="  git email #: "
+        select id_email in "${emails[@]}"; do
+          [[ -n "${id_email:-}" ]] && break
+        done < /dev/tty || true
+      fi
+      # No tty, or the picker was aborted: the account's primary email.
+      [[ -z "${id_email}" && "${#emails[@]}" -gt 0 ]] && \
+        id_email="$(gh api user/emails --jq '.[] | select(.primary) | .email' 2>/dev/null || true)"
+    fi
+  fi
+  if [[ -n "${id_name}" && -n "${id_email}" ]]; then
+    printf '[user]\n    name = %s\n    email = %s\n' "${id_name}" "${id_email}" > "${identity}"
+    echo "  wrote    ${identity}"
+    echo "           ${id_name} <${id_email}>  (edit the file if this isn't right)"
+  else
+    echo "  skipped  sign in with 'gh auth login --scopes user:email' and re-run,"
+    echo "           or set GIT_NAME/GIT_EMAIL."
+  fi
 fi
 echo ""
 
 # ---------- macOS defaults ----------
 echo "--- macOS defaults ---"
-if [[ "${DO_DEFAULTS}" == false ]]; then
-  echo "  Skipped (--no-defaults)."
-elif [[ "$(uname)" != "Darwin" ]]; then
-  echo "  Not macOS — skipping."
-else
-  # Warn and continue rather than abort: a managed machine will have some keys
-  # locked by MDM, and the rest should still apply.
-  set_default() {
-    if ! defaults write "$@" 2>/dev/null; then
-      echo "  locked   $1 $2"
-    fi
-  }
-  # shellcheck source=macos.defaults
-  source "${DOTFILES_DIR}/macos.defaults"
-  killall Dock &>/dev/null || true
-  killall Finder &>/dev/null || true
-  echo "  Applied. Some changes need a logout to take effect."
-fi
+# Warn and continue rather than abort... managed machines might have some keys locked by MDM.
+set_default() {
+  if ! defaults write "$@" 2>/dev/null; then
+    echo "  locked   $1 $2"
+  fi
+}
+source "${DOTFILES_DIR}/macos.defaults"
+killall Dock &>/dev/null || true
+killall Finder &>/dev/null || true
+echo "  Applied. Some changes need a logout to take effect."
 echo ""
+
+# ---------- dx (personal machines only) ----------
+# maybe one day this will be public
+if [[ "${DO_DX}" == true ]]; then
+  DX_DIR="${DX_DIR:-${DEV_HOME}/dx}"
+  [[ -e "${DX_DIR}/.git" ]] || gh repo clone "${DX_REPO:-Caiopia/dx}" "${DX_DIR}"
+  exec "${DX_DIR}/bin/dx" sync
+fi
 
 echo "Done. Restart your shell or: source ~/.zshrc"
