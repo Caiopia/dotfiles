@@ -90,6 +90,20 @@ echo "--- Packages ---"
 brew bundle install --file="${DOTFILES_DIR}/Brewfile"
 echo ""
 
+# ---------- Completion dirs ----------
+# Homebrew leaves some prefix dirs group-writable (admin), which compinit
+# flags as insecure. Tighten them so zsh completion loads without prompting.
+# compaudit prints nothing when clean, so re-runs are no-ops.
+echo "--- Completion dirs ---"
+insecure="$(zsh -fc 'autoload -Uz compaudit; compaudit' 2>/dev/null || true)"
+if [[ -n "${insecure}" ]]; then
+  echo "${insecure}" | sed 's/^/  fixing   /'
+  echo "${insecure}" | xargs chmod g-w
+else
+  echo "  ok"
+fi
+echo ""
+
 # ---------- Git identity ----------
 # Uses HTTPS login through gh to set up git identity, so no SSH keys are needed. Might look into SSH keys later, but this is simpler now.
 identity="${HOME}/.config/git/identity"
